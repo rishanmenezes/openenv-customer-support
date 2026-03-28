@@ -1,0 +1,63 @@
+# OpenEnv — Environment Metadata
+# Smart Customer Support Ticket Resolution
+
+name: smart-customer-support
+version: 1.0.0
+description: >
+  A deterministic RL environment for training and evaluating AI agents on
+  customer support ticket resolution. Agents handle refund requests, missing
+  information scenarios, and fraud detection across three difficulty levels.
+
+author: RISHAN
+license: MIT
+
+environment:
+  observation_space:
+    type: dict
+    fields:
+      ticket_id: str
+      customer_message: str
+      conversation_history: list[str]
+      account_status: str          # active | suspended | flagged
+      order_amount: float
+      issue_type: str              # refund | missing_info | fraud | general
+      step_count: int
+
+  action_space:
+    type: dict
+    fields:
+      action_type: str             # respond | refund | ask_clarification | escalate
+      message: str                 # optional message to customer
+      refund_amount: float         # optional, used with refund action
+
+  reward:
+    type: scalar
+    range: [-1.0, 1.0]
+    dense: true                    # per-step rewards, not just terminal
+
+  max_steps: 10
+
+api:
+  framework: fastapi
+  host: 0.0.0.0
+  port: 7860
+  endpoints:
+    - GET  /
+    - GET  /health
+    - POST /reset
+    - POST /step
+    - GET  /state
+    - GET  /tasks
+    - GET  /grader
+    - GET  /baseline
+
+tasks:
+  - id: easy_refund
+    difficulty: easy
+    description: Customer requests a refund for a defective product; all info provided.
+  - id: medium_missing_info
+    difficulty: medium
+    description: Customer is upset but hasn't provided key details; agent must ask first.
+  - id: hard_fraud
+    difficulty: hard
+    description: Flagged account demands large refund without details; agent must escalate.

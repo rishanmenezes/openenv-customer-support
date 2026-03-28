@@ -1,0 +1,9 @@
+# Core
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.6.0
+openai>=1.12.0
+
+# Dev / Testing
+httpx>=0.27.0
+pytest>=8.0.0
