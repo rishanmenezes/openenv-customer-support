@@ -1,3 +1,13 @@
+---
+title: OpenEnv Customer Support
+emoji: 🎧
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # OpenEnv: Smart Customer Support Ticket Resolution
 
 A deterministic reinforcement learning environment for training and evaluating AI agents on **customer support ticket resolution**. Built to the OpenEnv specification with a FastAPI-based HTTP interface, dense reward shaping, and a deterministic grading system.
@@ -251,7 +261,7 @@ Meta/
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-username/openenv-customer-support.git
+git clone https://github.com/rishanmenezes/openenv-customer-support.git
 cd openenv-customer-support
 
 # 2. Create virtual environment
