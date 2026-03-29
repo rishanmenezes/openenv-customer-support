@@ -1,0 +1,19 @@
+[project]
+name = "openenv-customer-support"
+version = "0.1.0"
+description = "Smart Customer Support Ticket Resolution OpenEnv Environment"
+authors = [
+    { name = "Rishan Menezes" }
+]
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "openai",
+    "httpx"
+]
+requires-python = ">=3.10"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
