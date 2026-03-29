@@ -33,6 +33,14 @@ env = Environment(max_steps=10)
 TASK_IDS = ["easy_refund", "medium_missing_info", "hard_fraud"]
 
 
+def _reset_environment(task_id: str | None) -> Observation:
+    """Shared reset logic for GET and POST /reset."""
+    try:
+        return env.reset(task_id=task_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 # ── Request schemas ──────────────────────────────────────────────────────────
 
 class ResetRequest(BaseModel):
@@ -49,14 +57,17 @@ class ResetRequest(BaseModel):
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
+@app.get("/reset", response_model=Observation, summary="Reset the environment (GET)")
+def reset_env_get(task_id: str | None = None) -> Observation:
+    """Reset the environment. Optional query: ?task_id=easy_refund (round-robin if omitted)."""
+    return _reset_environment(task_id)
+
+
 @app.post("/reset", response_model=Observation, summary="Reset the environment")
-def reset_env(body: ResetRequest | None = None) -> Observation:
-    """Reset the environment, optionally specifying a task, and return the first observation."""
-    task_id = body.task_id if body else None
-    try:
-        return env.reset(task_id=task_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+def reset_env_post(body: ResetRequest | None = None) -> Observation:
+    """Reset the environment; optional JSON body with task_id (e.g. easy_refund)."""
+    tid = body.task_id if body else None
+    return _reset_environment(tid)
 
 
 @app.post("/step", response_model=StepResult, summary="Take a step")
