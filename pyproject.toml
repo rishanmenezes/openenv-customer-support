@@ -2,9 +2,7 @@
 name = "openenv-customer-support"
 version = "0.1.0"
 description = "Smart Customer Support Ticket Resolution OpenEnv Environment"
-authors = [
-    { name = "Rishan Menezes" }
-]
+authors = [{ name = "Rishan Menezes" }]
 dependencies = [
     "fastapi",
     "uvicorn",
@@ -14,9 +12,8 @@ dependencies = [
 ]
 requires-python = ">=3.10"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["*"]
+[tool.setuptools]
+packages = ["api", "env", "baseline"]
 
 [build-system]
 requires = ["setuptools", "wheel"]
