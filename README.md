@@ -122,6 +122,8 @@ Three deterministic scenarios of increasing difficulty:
 
 Rewards are computed **per step** with dense shaping to guide learning. All values are deterministic and clamped to `[-1.0, +1.0]`.
 
+Reward is computed before state mutation to ensure causality and prevent future-state leakage.
+
 ### General Shaping (all tasks)
 
 | Signal | Value | Purpose |
@@ -434,6 +436,7 @@ curl http://localhost:7860/baseline
 | **Clean separation** | Environment logic, reward, grader, tasks, and API are all independent modules |
 | **Graceful degradation** | Server boots without `OPENAI_API_KEY`; baseline endpoint returns a clear error |
 | **OpenEnv compliant** | Standard `reset()` / `step()` / `state()` interface with `openenv.yaml` metadata |
+| **Adversarial safety** | Hard task evaluates safe decision-making under adversarial conditions (fraud detection). |
 
 ---
 
