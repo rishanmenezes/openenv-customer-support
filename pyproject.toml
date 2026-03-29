@@ -8,12 +8,16 @@ dependencies = [
     "uvicorn",
     "pydantic",
     "openai",
-    "httpx"
+    "httpx",
+    "openenv-core>=0.2.0",
 ]
 requires-python = ">=3.10"
 
+[project.scripts]
+server = "server.app:app"
+
 [tool.setuptools]
-packages = ["api", "env", "baseline"]
+packages = ["api", "env", "baseline", "server"]
 
 [build-system]
 requires = ["setuptools", "wheel"]
