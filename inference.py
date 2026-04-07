@@ -139,6 +139,7 @@ class FallbackAgent:
 
 def run_single_task(agent: Any, env: Any, task_id: str, max_steps: int = 10) -> dict[str, Any]:
     """Run agent through one task episode and return graded results."""
+    print(f"[START] task={task_id}", flush=True)
     try:
         from env.grader import grade
         from env.models import Action
@@ -146,6 +147,7 @@ def run_single_task(agent: Any, env: Any, task_id: str, max_steps: int = 10) -> 
         obs = env.reset(task_id=task_id)
         obs_dict = obs.model_dump()
         actions_taken: list[str] = []
+        step_num = 0
 
         for _ in range(max_steps):
             try:
@@ -164,23 +166,33 @@ def run_single_task(agent: Any, env: Any, task_id: str, max_steps: int = 10) -> 
                 actions_taken[-1] = "respond"
 
             result = env.step(action)
+            try:
+                reward = float(result.reward.value)
+            except Exception:
+                reward = 0.0
+            print(f"[STEP] step={step_num} reward={reward:.2f}", flush=True)
+            step_num += 1
             obs_dict = result.observation.model_dump()
 
             if result.done:
                 break
 
         grade_result = grade(env.state())
+        score = grade_result.score
+        num_steps = len(actions_taken)
+        print(f"[END] task={task_id} score={score:.2f} steps={num_steps}", flush=True)
 
         return {
             "task_id": task_id,
-            "score": grade_result.score,
+            "score": score,
             "passed": grade_result.passed,
-            "steps": len(actions_taken),
+            "steps": num_steps,
             "actions": actions_taken,
             "grade_details": grade_result.details,
         }
     except Exception as exc:
         logger.error("Task %s failed entirely: %s", task_id, exc)
+        print(f"[END] task={task_id} score=0.00 steps=0", flush=True)
         return {
             "task_id": task_id,
             "score": 0.0,
