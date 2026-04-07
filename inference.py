@@ -4,14 +4,18 @@ This script drives the agent DIRECTLY against the Environment (no HTTP server
 needed).  It reuses the existing baseline agent logic and prints the required
 output format.
 
-When OPENAI_API_KEY is available the LLM agent is used.  When the key is
-absent or the LLM agent fails to initialise a deterministic fallback agent
-takes over so the script **never** crashes.
+Agent selection priority:
+  1. API_BASE_URL + API_KEY  →  LLM via validator proxy  (ProxyAgent)
+  2. OPENAI_API_KEY          →  LLM via direct OpenAI    (BaselineAgent)
+  3. Neither                 →  Deterministic heuristic   (FallbackAgent)
+
+The script **never** crashes regardless of which agent is active.
 
 Optional environment variables:
-    OPENAI_API_KEY   - Your OpenAI API key (uses fallback agent if missing)
+    API_BASE_URL     - Validator-injected LiteLLM proxy base URL
+    API_KEY          - Validator-injected API key for the proxy
+    OPENAI_API_KEY   - Your OpenAI API key (fallback to deterministic if missing)
     MODEL_NAME       - Model to use (default: gpt-4o-mini)
-    API_BASE_URL     - Custom OpenAI-compatible base URL (default: OpenAI)
 
 Usage:
     python inference.py
@@ -135,6 +139,112 @@ class FallbackAgent:
         }
 
 
+# ── Proxy-aware LLM agent ────────────────────────────────────────────────────
+# Used when the validator injects API_BASE_URL + API_KEY.
+# Makes real LLM calls through the proxy; falls back to FallbackAgent on error.
+
+_PROXY_SYSTEM_PROMPT = """\
+You are a customer support agent. You receive a support ticket and must decide
+the best action. Respond with a single JSON object — no markdown, no extra text.
+
+Available actions:
+- respond: reply to the customer
+- ask_clarification: ask the customer for missing info
+- refund: issue a refund (include refund_amount)
+- escalate: escalate to senior agent / fraud team
+
+Rules:
+1. If all info present and refund requested → refund with correct amount.
+2. If key details missing → ask_clarification FIRST.
+3. If account is flagged or fraud suspected → escalate, do NOT refund.
+4. Be efficient: resolve in as few steps as possible.
+
+JSON format:
+{"action_type": "...", "message": "...", "refund_amount": 0.0}
+Only include refund_amount when action_type is "refund".
+"""
+
+
+class ProxyAgent:
+    """LLM agent that calls through the validator's LiteLLM proxy.
+
+    Falls back to FallbackAgent on ANY error so the script never crashes.
+    """
+
+    def __init__(self, base_url: str, api_key: str, model: str = "gpt-4o-mini") -> None:
+        from openai import OpenAI
+        self._client = OpenAI(base_url=base_url, api_key=api_key)
+        self._model = model
+        self._fallback = FallbackAgent()
+        self._calls_made = 0
+
+    def decide(self, observation: dict[str, Any]) -> dict[str, Any]:
+        """Call the LLM via proxy; fall back to deterministic on failure."""
+        try:
+            user_prompt = self._build_prompt(observation)
+            response = self._client.chat.completions.create(
+                model=self._model,
+                temperature=0.0,
+                messages=[
+                    {"role": "system", "content": _PROXY_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+            self._calls_made += 1
+            raw = response.choices[0].message.content or "{}"
+            logger.info("Proxy LLM response: %s", raw[:200])
+            return self._parse(raw, observation)
+        except Exception as exc:
+            logger.warning("Proxy LLM call failed: %s — using fallback", exc)
+            return self._fallback.decide(observation)
+
+    @property
+    def calls_made(self) -> int:
+        return self._calls_made
+
+    @staticmethod
+    def _build_prompt(obs: dict[str, Any]) -> str:
+        lines = [
+            "## Current Ticket",
+            f"- Ticket ID: {obs.get('ticket_id', 'N/A')}",
+            f"- Issue Type: {obs.get('issue_type', 'N/A')}",
+            f"- Account Status: {obs.get('account_status', 'N/A')}",
+            f"- Order Amount: ${obs.get('order_amount', 0):.2f}",
+            f"- Step: {obs.get('step_count', 0)}",
+            "",
+            "## Customer Message",
+            obs.get("customer_message", "(none)"),
+            "",
+            "Decide your next action. Respond with JSON only.",
+        ]
+        return "\n".join(lines)
+
+    @staticmethod
+    def _parse(raw: str, obs: dict[str, Any]) -> dict[str, Any]:
+        """Parse LLM JSON; return fallback action on any parse error."""
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning("Proxy LLM returned invalid JSON: %s", raw[:200])
+            return FallbackAgent().decide(obs)
+
+        valid_actions = {"respond", "refund", "ask_clarification", "escalate"}
+        action_type = data.get("action_type", "respond")
+        if action_type not in valid_actions:
+            action_type = "respond"
+
+        result: dict[str, Any] = {"action_type": action_type}
+        msg = data.get("message")
+        if msg and isinstance(msg, str):
+            result["message"] = msg
+        if action_type == "refund":
+            try:
+                result["refund_amount"] = float(data.get("refund_amount", 0.0))
+            except (TypeError, ValueError):
+                result["refund_amount"] = 0.0
+        return result
+
+
 # ── Run a single task with any agent that has a .decide() method ─────────────
 
 def run_single_task(agent: Any, env: Any, task_id: str, max_steps: int = 10) -> dict[str, Any]:
@@ -205,37 +315,53 @@ def run_single_task(agent: Any, env: Any, task_id: str, max_steps: int = 10) -> 
 
 def main() -> None:
     # ── Read configuration from environment ──────────────────────────
-    api_key = os.environ.get("OPENAI_API_KEY", "")
+    # Priority: API_BASE_URL+API_KEY (validator proxy) > OPENAI_API_KEY > fallback
+    api_base_url = os.environ.get("API_BASE_URL", "").strip()
+    api_key_proxy = os.environ.get("API_KEY", "").strip()
+    api_key_openai = os.environ.get("OPENAI_API_KEY", "").strip()
     model_name = os.environ.get("MODEL_NAME", "gpt-4o-mini")
-    api_base_url = os.environ.get("API_BASE_URL", None)
 
-    use_llm = bool(api_key)
     agent = None
+    agent_label = "Fallback (deterministic)"
 
-    # ── Try to initialise the LLM agent ──────────────────────────────
-    if use_llm:
+    # ── Option 1: Validator proxy (API_BASE_URL + API_KEY) ───────────
+    if api_base_url and api_key_proxy:
+        try:
+            agent = ProxyAgent(
+                base_url=api_base_url,
+                api_key=api_key_proxy,
+                model=model_name,
+            )
+            agent_label = f"Proxy LLM ({model_name} via {api_base_url})"
+            logger.info("Using LLM via validator proxy | Model: %s | URL: %s", model_name, api_base_url)
+        except Exception as exc:
+            logger.warning("Failed to init proxy agent: %s — trying next option", exc)
+            agent = None
+
+    # ── Option 2: Direct OpenAI (OPENAI_API_KEY) ─────────────────────
+    if agent is None and api_key_openai:
         try:
             from baseline.agent import BaselineAgent
             agent = BaselineAgent(
-                api_key=api_key,
+                api_key=api_key_openai,
                 model=model_name,
                 temperature=0.0,
-                base_url=api_base_url,
+                base_url=api_base_url or None,
             )
+            agent_label = f"LLM ({model_name})"
             logger.info("Using LLM agent | Model: %s | Temperature: 0.0", model_name)
-            if api_base_url:
-                logger.info("Base URL: %s", api_base_url)
         except Exception as exc:
-            logger.warning("Failed to initialise LLM agent: %s — switching to fallback", exc)
-            use_llm = False
+            logger.warning("Failed to init LLM agent: %s — switching to fallback", exc)
+            agent = None
 
-    # ── Fall back to deterministic agent ─────────────────────────────
-    if not use_llm or agent is None:
+    # ── Option 3: Deterministic fallback ─────────────────────────────
+    if agent is None:
         logger.warning(
-            "OPENAI_API_KEY is not set or LLM agent unavailable. "
+            "No API credentials available (API_KEY, OPENAI_API_KEY). "
             "Running with deterministic fallback agent."
         )
         agent = FallbackAgent()
+        agent_label = "Fallback (deterministic)"
 
     # ── Import environment ───────────────────────────────────────────
     try:
@@ -320,7 +446,9 @@ def main() -> None:
     print()
     print(f"  Average Score : {average_score:.4f}")
     print(f"  Total Time    : {elapsed}s")
-    print(f"  Agent         : {'LLM (' + model_name + ')' if use_llm else 'Fallback (deterministic)'}")
+    print(f"  Agent         : {agent_label}")
+    if hasattr(agent, 'calls_made'):
+        print(f"  LLM API Calls : {agent.calls_made}")
     print()
 
 
