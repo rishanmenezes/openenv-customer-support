@@ -1,0 +1,14 @@
+.venv/
+venv/
+.git/
+.gitignore
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.cursor/
+*.egg-info/
+uv.lock
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
