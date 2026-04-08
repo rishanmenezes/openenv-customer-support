@@ -74,6 +74,11 @@ def grade(state: EnvironmentState) -> GradeResult:
     raw_score = task_score + efficiency_bonus
     final_score = round(min(1.0, max(0.0, raw_score)), 4)
 
+    if final_score >= 1.0:
+        final_score = 0.99
+    elif final_score <= 0.0:
+        final_score = 0.01
+
     details["raw_score"] = round(raw_score, 4)
     details["final_score"] = final_score
 
