@@ -304,6 +304,8 @@ def run_single_task(agent: Any, env: Any, task_id: str, max_steps: int = 10) -> 
                 reward = float(result.reward.value)
             except Exception:
                 reward = 0.0
+            # Clamp: no reward is ever exactly 0.0 or 1.0
+            reward = min(max(reward, 0.01), 0.99)
 
             done = bool(result.done)
             done_str = "true" if done else "false"
