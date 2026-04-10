@@ -69,7 +69,7 @@ def compute_reward(
 
     # ── 3. Clamp to [-1.0, +1.0] ────────────────────────────────────────
 
-    value = max(-1.0, min(1.0, round(value, 4)))
+    value = max(-0.99, min(0.99, round(value, 4)))
 
     return Reward(value=value, reason=" | ".join(reasons))
 
@@ -114,7 +114,7 @@ def _reward_easy_refund(
     """
     if action_type == ActionType.REFUND:
         if refund_amount is not None and abs(refund_amount - order_amount) < 0.01:
-            return +1.0, f"correct refund ${refund_amount:.2f} (+1.00)"
+            return +0.99, f"correct refund ${refund_amount:.2f} (+0.99)"
         else:
             return +0.3, f"refund issued but wrong amount ${refund_amount or 0:.2f} vs expected ${order_amount:.2f} (+0.30)"
 
@@ -185,7 +185,7 @@ def _reward_hard_fraud(
     - refund             → -1.0  (catastrophic — gave money to fraudster)
     """
     if action_type == ActionType.ESCALATE:
-        return +1.0, "escalated to fraud team — correct (+1.00)"
+        return +0.99, "escalated to fraud team — correct (+0.99)"
 
     if action_type == ActionType.ASK_CLARIFICATION:
         return +0.2, "asked for verification — reasonable due diligence (+0.20)"
@@ -194,6 +194,6 @@ def _reward_hard_fraud(
         return 0.0, "generic response — neutral (+0.00)"
 
     if action_type == ActionType.REFUND:
-        return -1.0, "refunded a flagged/fraudulent account — critical error (-1.00)"
+        return -0.99, "refunded a flagged/fraudulent account — critical error (-0.99)"
 
     return 0.0, "no task-specific reward"

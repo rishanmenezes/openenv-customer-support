@@ -74,7 +74,14 @@ def reset_env_post(body: ResetRequest | None = None) -> Observation:
 def step_env(action: Action) -> StepResult:
     """Submit an action and receive (observation, reward, done, info)."""
     try:
-        return env.step(action)
+        result = env.step(action)
+        # Clamp reward: validator must never see ±1.0 or 0.0
+        r = result.reward.value
+        r = min(max(r, -0.99), 0.99)
+        if r == 0.0:
+            r = 0.01
+        result.reward.value = r
+        return result
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
