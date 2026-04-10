@@ -5,16 +5,15 @@ needed).  It reuses the existing baseline agent logic and prints the required
 output format.
 
 Agent selection priority:
-  1. API_BASE_URL + API_KEY  →  LLM via validator proxy  (ProxyAgent)
-  2. OPENAI_API_KEY          →  LLM via direct OpenAI    (BaselineAgent)
-  3. Neither                 →  Deterministic heuristic   (FallbackAgent)
+  1. API_BASE_URL + HF_TOKEN  →  LLM via validator proxy  (ProxyAgent)
+  2. OPENAI_API_KEY           →  LLM via direct OpenAI    (BaselineAgent)
+  3. Neither                  →  Deterministic heuristic   (FallbackAgent)
 
 The script **never** crashes regardless of which agent is active.
 
-Optional environment variables:
+Environment variables:
     API_BASE_URL     - Validator-injected LiteLLM proxy base URL
-    API_KEY          - Validator-injected API key for the proxy
-    OPENAI_API_KEY   - Your OpenAI API key (fallback to deterministic if missing)
+    HF_TOKEN         - Validator-injected API key for the proxy
     MODEL_NAME       - Model to use (default: gpt-4o-mini)
 
 Usage:
@@ -37,6 +36,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 TASK_IDS = ["easy_refund", "medium_missing_info", "hard_fraud"]
+
+# ── Environment variables (strict OpenEnv protocol) ──────────────────────────
+API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")
+HF_TOKEN = os.getenv("HF_TOKEN")
+
+# ── Initialize OpenAI client ─────────────────────────────────────────────────
+from openai import OpenAI
+client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
 # Runtime safety: abort remaining tasks if we approach the 20-minute limit.
 # 18 minutes leaves a 2-minute buffer for cleanup / output.
@@ -140,7 +148,7 @@ class FallbackAgent:
 
 
 # ── Proxy-aware LLM agent ────────────────────────────────────────────────────
-# Used when the validator injects API_BASE_URL + API_KEY.
+# Used when the validator injects API_BASE_URL + HF_TOKEN.
 # Makes real LLM calls through the proxy; falls back to FallbackAgent on error.
 
 _PROXY_SYSTEM_PROMPT = """\
@@ -171,9 +179,8 @@ class ProxyAgent:
     Falls back to FallbackAgent on ANY error so the script never crashes.
     """
 
-    def __init__(self, base_url: str, api_key: str, model: str = "gpt-4o-mini") -> None:
-        from openai import OpenAI
-        self._client = OpenAI(base_url=base_url, api_key=api_key)
+    def __init__(self, openai_client: OpenAI, model: str = "gpt-4o-mini") -> None:
+        self._client = openai_client
         self._model = model
         self._fallback = FallbackAgent()
         self._calls_made = 0
@@ -248,8 +255,19 @@ class ProxyAgent:
 # ── Run a single task with any agent that has a .decide() method ─────────────
 
 def run_single_task(agent: Any, env: Any, task_id: str, max_steps: int = 10) -> dict[str, Any]:
-    """Run agent through one task episode and return graded results."""
-    print(f"[START] task={task_id}", flush=True)
+    """Run agent through one task episode and return graded results.
+
+    Output strictly follows the OpenEnv judging protocol:
+      [START] task=<id> env=customer_support model=<model>
+      [STEP]  step=<n> action=<type> reward=<r> done=<bool> error=<str|null>
+      [END]   success=<bool> steps=<n> rewards=[r1, r2, ...]
+    """
+    print(f"[START] task={task_id} env=customer_support model={MODEL_NAME}", flush=True)
+
+    rewards_list: list[float] = []
+    step_count = 0
+    success = False
+
     try:
         from env.grader import grade
         from env.models import Action
@@ -257,16 +275,19 @@ def run_single_task(agent: Any, env: Any, task_id: str, max_steps: int = 10) -> 
         obs = env.reset(task_id=task_id)
         obs_dict = obs.model_dump()
         actions_taken: list[str] = []
-        step_num = 0
 
         for _ in range(max_steps):
+            # ── Decide action ────────────────────────────────────────
+            error_str = "null"
             try:
                 action_dict = agent.decide(obs_dict)
             except Exception as exc:
                 logger.warning("Agent.decide() failed: %s — using safe default", exc)
                 action_dict = {"action_type": "respond", "message": "Looking into your issue."}
+                error_str = str(exc)
 
-            actions_taken.append(action_dict.get("action_type", "respond"))
+            action_type_str = action_dict.get("action_type", "respond")
+            actions_taken.append(action_type_str)
 
             try:
                 action = Action(**action_dict)
@@ -274,94 +295,88 @@ def run_single_task(agent: Any, env: Any, task_id: str, max_steps: int = 10) -> 
                 logger.warning("Action parse failed: %s — using respond", exc)
                 action = Action(action_type="respond", message="Looking into your issue.")
                 actions_taken[-1] = "respond"
+                action_type_str = "respond"
+                error_str = str(exc)
 
+            # ── Step environment ─────────────────────────────────────
             result = env.step(action)
             try:
                 reward = float(result.reward.value)
             except Exception:
                 reward = 0.0
-            print(f"[STEP] step={step_num} reward={reward:.2f}", flush=True)
-            step_num += 1
+
+            done = bool(result.done)
+            done_str = "true" if done else "false"
+            rewards_list.append(reward)
+            step_count += 1
+
+            print(f"[STEP] step={step_count - 1} action={action_type_str} reward={reward:.2f} done={done_str} error={error_str}", flush=True)
+
             obs_dict = result.observation.model_dump()
 
-            if result.done:
+            if done:
                 break
 
+        # ── Grade ────────────────────────────────────────────────────
         grade_result = grade(env.state())
-        score = grade_result.score
-        num_steps = len(actions_taken)
-        print(f"[END] task={task_id} score={score:.2f} steps={num_steps}", flush=True)
+        success = bool(grade_result.passed)
 
-        return {
-            "task_id": task_id,
-            "score": score,
-            "passed": grade_result.passed,
-            "steps": num_steps,
-            "actions": actions_taken,
-            "grade_details": grade_result.details,
-        }
     except Exception as exc:
         logger.error("Task %s failed entirely: %s", task_id, exc)
-        print(f"[END] task={task_id} score=0.00 steps=0", flush=True)
-        return {
-            "task_id": task_id,
-            "score": 0.0,
-            "passed": False,
-            "steps": 0,
-            "actions": [],
-            "error": str(exc),
-        }
+
+    # ── END line ─────────────────────────────────────────────────────
+    success_str = "true" if success else "false"
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards_list)
+    print(f"[END] success={success_str} steps={step_count} rewards={rewards_str}", flush=True)
+
+    return {
+        "task_id": task_id,
+        "success": success,
+        "steps": step_count,
+        "rewards": rewards_list,
+    }
 
 
 def main() -> None:
-    # ── Read configuration from environment ──────────────────────────
-    # Priority: API_BASE_URL+API_KEY (validator proxy) > OPENAI_API_KEY > fallback
-    api_base_url = os.environ.get("API_BASE_URL", "").strip()
-    api_key_proxy = os.environ.get("API_KEY", "").strip()
-    api_key_openai = os.environ.get("OPENAI_API_KEY", "").strip()
-    model_name = os.environ.get("MODEL_NAME", "gpt-4o-mini")
-
+    # ── Agent selection ──────────────────────────────────────────────
     agent = None
-    agent_label = "Fallback (deterministic)"
 
-    # ── Option 1: Validator proxy (API_BASE_URL + API_KEY) ───────────
-    if api_base_url and api_key_proxy:
+    # ── Option 1: Validator proxy (API_BASE_URL + HF_TOKEN) ──────────
+    if HF_TOKEN:
         try:
             agent = ProxyAgent(
-                base_url=api_base_url,
-                api_key=api_key_proxy,
-                model=model_name,
+                openai_client=client,
+                model=MODEL_NAME,
             )
-            agent_label = f"Proxy LLM ({model_name} via {api_base_url})"
-            logger.info("Using LLM via validator proxy | Model: %s | URL: %s", model_name, api_base_url)
+            logger.info("Using LLM via validator proxy | Model: %s | URL: %s", MODEL_NAME, API_BASE_URL)
         except Exception as exc:
             logger.warning("Failed to init proxy agent: %s — trying next option", exc)
             agent = None
 
     # ── Option 2: Direct OpenAI (OPENAI_API_KEY) ─────────────────────
-    if agent is None and api_key_openai:
-        try:
-            from baseline.agent import BaselineAgent
-            agent = BaselineAgent(
-                api_key=api_key_openai,
-                model=model_name,
-                temperature=0.0,
-                base_url=api_base_url or None,
-            )
-            agent_label = f"LLM ({model_name})"
-            logger.info("Using LLM agent | Model: %s | Temperature: 0.0", model_name)
-        except Exception as exc:
-            logger.warning("Failed to init LLM agent: %s — switching to fallback", exc)
-            agent = None
+    if agent is None:
+        api_key_openai = os.environ.get("OPENAI_API_KEY", "").strip()
+        if api_key_openai:
+            try:
+                from baseline.agent import BaselineAgent
+                agent = BaselineAgent(
+                    api_key=api_key_openai,
+                    model=MODEL_NAME,
+                    temperature=0.0,
+                    base_url=API_BASE_URL or None,
+                )
+                logger.info("Using LLM agent | Model: %s | Temperature: 0.0", MODEL_NAME)
+            except Exception as exc:
+                logger.warning("Failed to init LLM agent: %s — switching to fallback", exc)
+                agent = None
 
     # ── Option 3: Deterministic fallback ─────────────────────────────
     if agent is None:
         logger.warning(
-            "No API credentials available (API_KEY, OPENAI_API_KEY). "
+            "No API credentials available (HF_TOKEN, OPENAI_API_KEY). "
             "Running with deterministic fallback agent."
         )
         agent = FallbackAgent()
-        agent_label = "Fallback (deterministic)"
 
     # ── Import environment ───────────────────────────────────────────
     try:
@@ -369,20 +384,13 @@ def main() -> None:
         env = Environment(max_steps=10)
     except Exception as exc:
         logger.error("Failed to create Environment: %s", exc)
-        # Even if Environment fails, produce valid output
-        final_output = {
-            "task_scores": {tid: 0.0 for tid in TASK_IDS},
-            "average_score": 0.0,
-        }
-        print(json.dumps(final_output, indent=2))
+        # Produce valid [END] for each task on catastrophic failure
+        for task_id in TASK_IDS:
+            print(f"[START] task={task_id} env=customer_support model={MODEL_NAME}", flush=True)
+            print(f"[END] success=false steps=0 rewards=", flush=True)
         return
 
     # ── Run all tasks ────────────────────────────────────────────────
-    print("=" * 60)
-    print("INFERENCE RUN")
-    print("=" * 60)
-
-    task_results: dict[str, Any] = {}
     start_time = time.time()
 
     for task_id in TASK_IDS:
@@ -390,66 +398,14 @@ def main() -> None:
         elapsed_so_far = time.time() - start_time
         if elapsed_so_far >= MAX_TOTAL_SECONDS:
             logger.warning(
-                "Runtime limit approaching (%.0fs elapsed). "
-                "Skipping remaining tasks.",
+                "Runtime limit approaching (%.0fs elapsed). Skipping remaining tasks.",
                 elapsed_so_far,
             )
-            task_results[task_id] = {
-                "task_id": task_id,
-                "score": 0.0,
-                "passed": False,
-                "steps": 0,
-                "actions": [],
-                "error": "skipped — runtime limit reached",
-            }
+            print(f"[START] task={task_id} env=customer_support model={MODEL_NAME}", flush=True)
+            print(f"[END] success=false steps=0 rewards=", flush=True)
             continue
 
-        print()
-        logger.info("--- Task: %s ---", task_id)
-
-        result = run_single_task(agent, env, task_id)
-        task_results[task_id] = result
-
-        logger.info(
-            "  Score: %.2f | Passed: %s | Steps: %d | Actions: %s",
-            result["score"],
-            result.get("passed", False),
-            result.get("steps", 0),
-            result.get("actions", []),
-        )
-
-    elapsed = round(time.time() - start_time, 2)
-
-    # ── Build and print final output ─────────────────────────────────
-    task_scores = {tid: task_results.get(tid, {}).get("score", 0.0) for tid in TASK_IDS}
-    scores = list(task_scores.values())
-    average_score = round(sum(scores) / len(scores), 4) if scores else 0.0
-
-    final_output = {
-        "task_scores": task_scores,
-        "average_score": average_score,
-    }
-
-    print()
-    print("=" * 60)
-    print("FINAL OUTPUT")
-    print("=" * 60)
-    print(json.dumps(final_output, indent=2))
-    print()
-
-    # ── Extended summary (informational) ─────────────────────────────
-    for tid in TASK_IDS:
-        res = task_results.get(tid, {})
-        status = "PASS" if res.get("passed") else "FAIL"
-        print(f"  [{status}] {tid}: score={res.get('score', 0.0):.2f}, steps={res.get('steps', 0)}, actions={res.get('actions', [])}")
-
-    print()
-    print(f"  Average Score : {average_score:.4f}")
-    print(f"  Total Time    : {elapsed}s")
-    print(f"  Agent         : {agent_label}")
-    if hasattr(agent, 'calls_made'):
-        print(f"  LLM API Calls : {agent.calls_made}")
-    print()
+        run_single_task(agent, env, task_id)
 
 
 if __name__ == "__main__":
