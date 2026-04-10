@@ -252,6 +252,21 @@ class ProxyAgent:
         return result
 
 
+# ── Format-safe reward clamping ──────────────────────────────────────────────
+
+def safe_reward(r: Any) -> float:
+    """Clamp a reward so it NEVER formats as 0.00 or 1.00 via :.2f."""
+    try:
+        r = float(r)
+    except (TypeError, ValueError):
+        return 0.01
+    if r >= 1.0:
+        return 0.98
+    if r <= 0.0:
+        return 0.01
+    return r
+
+
 # ── Run a single task with any agent that has a .decide() method ─────────────
 
 def run_single_task(agent: Any, env: Any, task_id: str, max_steps: int = 10) -> dict[str, Any]:
@@ -300,12 +315,7 @@ def run_single_task(agent: Any, env: Any, task_id: str, max_steps: int = 10) -> 
 
             # ── Step environment ─────────────────────────────────────
             result = env.step(action)
-            try:
-                reward = float(result.reward.value)
-            except Exception:
-                reward = 0.0
-            # Clamp: no reward ever formats as 0.00 or 1.00
-            reward = min(max(reward, 0.01), 0.98)
+            reward = safe_reward(result.reward.value if result.reward else 0.01)
 
             done = bool(result.done)
             done_str = "true" if done else "false"
@@ -328,9 +338,9 @@ def run_single_task(agent: Any, env: Any, task_id: str, max_steps: int = 10) -> 
 
     # ── END line ─────────────────────────────────────────────────────
     success_str = "true" if success else "false"
-    # Pre-format clamp: guarantee no "0.00" or "1.00" after :.2f
-    safe_rewards = [min(max(r, 0.01), 0.98) for r in rewards_list]
-    rewards_str = ",".join(f"{r:.2f}" for r in safe_rewards)
+    # Final safety: re-clamp every reward before formatting
+    clamped_rewards = [safe_reward(r) for r in rewards_list]
+    rewards_str = ",".join(f"{r:.2f}" for r in clamped_rewards)
     print(f"[END] success={success_str} steps={step_count} rewards={rewards_str}", flush=True)
 
     return {
