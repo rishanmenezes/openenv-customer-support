@@ -79,7 +79,7 @@ class Reward(BaseModel):
     """Scalar reward returned after a step (placeholder — grading TBD)."""
 
     value: float = Field(
-        default=0.0,
+        default=0.01,
         description="Numeric reward signal.",
     )
     reason: str = Field(

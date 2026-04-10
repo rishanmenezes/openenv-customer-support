@@ -21,8 +21,8 @@ class GradeResult(BaseModel):
     """Result of grading an episode."""
 
     score: float = Field(
-        default=0.0,
-        description="Normalised score in [0.0, 1.0].",
+        default=0.01,
+        description="Normalised score in (0, 1).",
     )
     passed: bool = Field(
         default=False,

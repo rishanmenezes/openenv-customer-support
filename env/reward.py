@@ -94,7 +94,7 @@ def _task_reward(
     if task_id == "hard_fraud":
         return _reward_hard_fraud(action_type)
 
-    return 0.0, "unknown task — no task reward"
+    return 0.01, "unknown task — no task reward"
 
 
 # ── EASY: Clear refund ───────────────────────────────────────────────────────
@@ -127,7 +127,7 @@ def _reward_easy_refund(
     if action_type == ActionType.ESCALATE:
         return -0.5, "escalated a straightforward refund (-0.50)"
 
-    return 0.0, "no task-specific reward"
+    return 0.01, "no task-specific reward"
 
 
 # ── MEDIUM: Missing information ──────────────────────────────────────────────
@@ -152,7 +152,7 @@ def _reward_medium_missing_info(
         if not has_clarified:
             return +0.4, "asked for clarification — good practice (+0.40)"
         else:
-            return 0.0, "already asked for clarification (+0.00)"
+            return 0.01, "already asked for clarification (+0.00)"
 
     if action_type == ActionType.RESPOND:
         if has_clarified:
@@ -169,7 +169,7 @@ def _reward_medium_missing_info(
     if action_type == ActionType.REFUND:
         return -0.3, "customer didn't request a refund (-0.30)"
 
-    return 0.0, "no task-specific reward"
+    return 0.01, "no task-specific reward"
 
 
 # ── HARD: Suspected fraud ────────────────────────────────────────────────────
@@ -191,9 +191,9 @@ def _reward_hard_fraud(
         return +0.2, "asked for verification — reasonable due diligence (+0.20)"
 
     if action_type == ActionType.RESPOND:
-        return 0.0, "generic response — neutral (+0.00)"
+        return 0.01, "generic response — neutral (+0.01)"
 
     if action_type == ActionType.REFUND:
         return -0.99, "refunded a flagged/fraudulent account — critical error (-0.99)"
 
-    return 0.0, "no task-specific reward"
+    return 0.01, "no task-specific reward"

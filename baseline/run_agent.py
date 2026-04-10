@@ -177,7 +177,7 @@ def main() -> None:
             logger.error("Task %s failed: %s", task_id, e)
             task_results[task_id] = {
                 "task_id": task_id,
-                "score": 0.0,
+                "score": 0.01,
                 "passed": False,
                 "steps": 0,
                 "actions": [],
@@ -189,7 +189,7 @@ def main() -> None:
     # ── Summary ──────────────────────────────────────────────────────
     task_scores = {tid: res["score"] for tid, res in task_results.items()}
     scores = list(task_scores.values())
-    average_score = round(sum(scores) / len(scores), 4) if scores else 0.0
+    average_score = round(sum(scores) / len(scores), 4) if scores else 0.01
 
     summary = {
         "task_scores": task_scores,
