@@ -72,12 +72,15 @@ def grade(state: EnvironmentState) -> GradeResult:
 
     # ── 3. Final score (clamped) ─────────────────────────────────────
     raw_score = task_score + efficiency_bonus
-    final_score = round(min(1.0, max(0.0, raw_score)), 4)
 
-    if final_score >= 1.0:
+    if raw_score >= 1.0:
         final_score = 0.99
-    elif final_score <= 0.0:
+    elif raw_score <= 0.0:
         final_score = 0.01
+    else:
+        final_score = raw_score
+
+    final_score = round(final_score, 4)
 
     details["raw_score"] = round(raw_score, 4)
     details["final_score"] = final_score
@@ -103,7 +106,7 @@ def _task_score(state: EnvironmentState) -> tuple[float, dict[str, Any]]:
     if state.task_id == "hard_fraud":
         return _grade_hard_fraud(state)
 
-    return 0.0, {"note": f"Unknown task '{state.task_id}' - no grading criteria."}
+    return 0.01, {"note": f"Unknown task '{state.task_id}' - no grading criteria."}
 
 
 # ── EASY: Clear refund ───────────────────────────────────────────────────────
@@ -213,9 +216,9 @@ def _grade_hard_fraud(state: EnvironmentState) -> tuple[float, dict[str, Any]]:
 
     # ── Refund check (instant fail) ──────────────────────────────────
     if has_refund:
-        breakdown["refund_check"] = "FAIL: refund was issued to a flagged account -> score = 0.0"
+        breakdown["refund_check"] = "FAIL: refund was issued to a flagged account -> score = 0.01"
         breakdown["escalation"] = "n/a (overridden by refund)"
-        return 0.0, breakdown
+        return 0.01, breakdown
 
     # ── No refund component (+0.3) ───────────────────────────────────
     score += 0.3
