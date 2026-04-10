@@ -338,8 +338,18 @@ def run_single_task(agent: Any, env: Any, task_id: str, max_steps: int = 10) -> 
 
     # ── END line ─────────────────────────────────────────────────────
     success_str = "true" if success else "false"
-    # Final safety: re-clamp every reward before formatting
+    # Step 1: clamp each reward individually
     clamped_rewards = [safe_reward(r) for r in rewards_list]
+    # Step 2: prevent total from hitting exactly 1.0 or 0.0
+    if clamped_rewards:
+        total = sum(clamped_rewards)
+        if total >= 1.0:
+            scale = 0.98 / total
+            clamped_rewards = [r * scale for r in clamped_rewards]
+        elif total <= 0.0:
+            clamped_rewards = [0.01 for _ in clamped_rewards]
+    # Step 3: final per-value clamp after scaling (safety net)
+    clamped_rewards = [min(max(r, 0.01), 0.98) for r in clamped_rewards]
     rewards_str = ",".join(f"{r:.2f}" for r in clamped_rewards)
     print(f"[END] success={success_str} steps={step_count} rewards={rewards_str}", flush=True)
 
