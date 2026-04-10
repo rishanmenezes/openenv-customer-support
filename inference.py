@@ -304,8 +304,8 @@ def run_single_task(agent: Any, env: Any, task_id: str, max_steps: int = 10) -> 
                 reward = float(result.reward.value)
             except Exception:
                 reward = 0.0
-            # Clamp: no reward is ever exactly 0.0 or 1.0
-            reward = min(max(reward, 0.01), 0.99)
+            # Clamp: no reward ever formats as 0.00 or 1.00
+            reward = min(max(reward, 0.01), 0.98)
 
             done = bool(result.done)
             done_str = "true" if done else "false"
@@ -328,7 +328,9 @@ def run_single_task(agent: Any, env: Any, task_id: str, max_steps: int = 10) -> 
 
     # ── END line ─────────────────────────────────────────────────────
     success_str = "true" if success else "false"
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards_list)
+    # Pre-format clamp: guarantee no "0.00" or "1.00" after :.2f
+    safe_rewards = [min(max(r, 0.01), 0.98) for r in rewards_list]
+    rewards_str = ",".join(f"{r:.2f}" for r in safe_rewards)
     print(f"[END] success={success_str} steps={step_count} rewards={rewards_str}", flush=True)
 
     return {

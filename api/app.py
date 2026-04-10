@@ -95,8 +95,8 @@ def list_tasks() -> list[Task]:
 def grader_endpoint() -> GradeResult:
     """Grade the agent's performance in the current episode."""
     result = grade(env.state())
-    # FORCE clamp: validator must never see 0.0 or 1.0
-    clamped = min(max(result.score, 0.01), 0.99)
+    # FORCE clamp: validator must never see 0.00 or 1.00
+    clamped = min(max(result.score, 0.01), 0.98)
     result.score = clamped
     result.passed = clamped >= 0.5
     return result
@@ -155,7 +155,7 @@ def baseline_endpoint() -> dict[str, Any]:
 
     # Clamp every task score at API level
     task_scores = {
-        tid: min(max(res["score"], 0.01), 0.99)
+        tid: min(max(res["score"], 0.01), 0.98)
         for tid, res in task_results.items()
     }
     scores = list(task_scores.values())
