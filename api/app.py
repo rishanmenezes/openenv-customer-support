@@ -7,10 +7,8 @@ import logging
 import os
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from starlette.middleware.base import BaseHTTPMiddleware
 
 from env.environment import Environment
 from env.grader import GradeResult, grade
@@ -29,66 +27,6 @@ app = FastAPI(
         "to resolve support tickets across easy, medium, and hard scenarios."
     ),
     version="1.0.0",
-)
-
-
-# ── Nuclear response sanitizer ───────────────────────────────────────────────
-# Intercepts ALL JSON responses and recursively clamps every float so that
-# no value is exactly 0.0 or 1.0.  This is the absolute last line of defense.
-
-def _sanitize_value(obj: Any) -> Any:
-    """Recursively walk a JSON-serializable structure and clamp floats."""
-    if isinstance(obj, float):
-        if obj >= 1.0:
-            return 0.99
-        if obj <= 0.0:
-            return 0.01
-        return obj
-    if isinstance(obj, dict):
-        return {k: _sanitize_value(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_sanitize_value(v) for v in obj]
-    return obj
-
-
-class SanitizeScoresMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
-        # Only process JSON responses
-        if response.headers.get("content-type", "").startswith("application/json"):
-            body = b""
-            async for chunk in response.body_iterator:
-                if isinstance(chunk, bytes):
-                    body += chunk
-                else:
-                    body += chunk.encode("utf-8")
-            try:
-                data = json.loads(body)
-                sanitized = _sanitize_value(data)
-                new_body = json.dumps(sanitized).encode("utf-8")
-                headers = dict(response.headers)
-                headers.pop("content-length", None)
-                return Response(
-                    content=new_body,
-                    status_code=response.status_code,
-                    headers=headers,
-                    media_type="application/json",
-                )
-            except (json.JSONDecodeError, Exception):
-                headers = dict(response.headers)
-                headers.pop("content-length", None)
-                return Response(
-                    content=body,
-                    status_code=response.status_code,
-                    headers=headers,
-                    media_type=response.media_type,
-                )
-        return response
-
-
-app.add_middleware(SanitizeScoresMiddleware)
-
-
 env = Environment(max_steps=10)
 
 TASK_IDS = ["easy_refund", "medium_missing_info", "hard_fraud"]
