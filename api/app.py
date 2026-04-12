@@ -66,17 +66,21 @@ class SanitizeScoresMiddleware(BaseHTTPMiddleware):
                 data = json.loads(body)
                 sanitized = _sanitize_value(data)
                 new_body = json.dumps(sanitized).encode("utf-8")
+                headers = dict(response.headers)
+                headers.pop("content-length", None)
                 return Response(
                     content=new_body,
                     status_code=response.status_code,
-                    headers=dict(response.headers),
+                    headers=headers,
                     media_type="application/json",
                 )
             except (json.JSONDecodeError, Exception):
+                headers = dict(response.headers)
+                headers.pop("content-length", None)
                 return Response(
                     content=body,
                     status_code=response.status_code,
-                    headers=dict(response.headers),
+                    headers=headers,
                     media_type=response.media_type,
                 )
         return response
