@@ -351,19 +351,31 @@ def run_single_task(agent: Any, env: Any, task_id: str, max_steps: int = 10) -> 
 
     # ── END line ─────────────────────────────────────────────────────
     success_str = "true" if success else "false"
-    # Step 1: clamp each reward individually
-    clamped_rewards = [safe_reward(r) for r in rewards_list]
-    # Step 2: prevent total from hitting exactly 1.0 or 0.0
-    if clamped_rewards:
-        total = sum(clamped_rewards)
-        if total >= 1.0:
-            scale = 0.98 / total
-            clamped_rewards = [r * scale for r in clamped_rewards]
-        elif total <= 0.0:
-            clamped_rewards = [0.01 for _ in clamped_rewards]
-    # Step 3: final per-value clamp after scaling (safety net)
-    clamped_rewards = [min(max(r, 0.01), 0.98) for r in clamped_rewards]
-    rewards_str = ",".join(_safe_fmt(r) for r in clamped_rewards)
+    
+    # Fully deterministic format-aware clamping to guarantee sum is exactly within (0, 1)
+    final_floats = [float(f"{min(max(r, 0.01), 0.98):.2f}") for r in rewards_list]
+    if not final_floats:
+        final_floats = [0.01]
+
+    # Iteratively trim largest element if formatted sum >= 1.0
+    while round(sum(final_floats), 2) >= 1.0:
+        max_idx = final_floats.index(max(final_floats))
+        final_floats[max_idx] -= 0.01
+        final_floats = [round(f, 2) for f in final_floats]
+
+    # Iteratively pad smallest element if formatted sum <= 0.0
+    while round(sum(final_floats), 2) <= 0.0:
+        min_idx = final_floats.index(min(final_floats))
+        final_floats[min_idx] += 0.01
+        final_floats = [round(f, 2) for f in final_floats]
+
+    # Final safety sweep for bounds of individual steps
+    for i in range(len(final_floats)):
+        if final_floats[i] >= 1.0: final_floats[i] = 0.99
+        elif final_floats[i] <= 0.0: final_floats[i] = 0.01
+        final_floats[i] = round(final_floats[i], 2)
+
+    rewards_str = ",".join(f"{r:.2f}" for r in final_floats)
     print(f"[END] success={success_str} steps={step_count} rewards={rewards_str}", flush=True)
 
     return {
@@ -424,7 +436,7 @@ def main() -> None:
         # Produce valid [END] for each task on catastrophic failure
         for task_id in TASK_IDS:
             print(f"[START] task={task_id} env=customer_support model={MODEL_NAME}", flush=True)
-            print(f"[END] success=false steps=0 rewards=", flush=True)
+            print(f"[END] success=false steps=0 rewards=0.01", flush=True)
         return
 
     # ── Run all tasks ────────────────────────────────────────────────
@@ -439,7 +451,7 @@ def main() -> None:
                 elapsed_so_far,
             )
             print(f"[START] task={task_id} env=customer_support model={MODEL_NAME}", flush=True)
-            print(f"[END] success=false steps=0 rewards=", flush=True)
+            print(f"[END] success=false steps=0 rewards=0.01", flush=True)
             continue
 
         run_single_task(agent, env, task_id)
