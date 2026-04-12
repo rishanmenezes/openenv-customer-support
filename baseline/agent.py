@@ -242,7 +242,13 @@ def run_single_task_direct(
             break
 
     grade_result = grade(env.state())
-    clamped_score = min(max(grade_result.score, 0.01), 0.98)
+    raw = grade_result.score
+    if raw >= 1.0:
+        clamped_score = 0.99
+    elif raw <= 0.0:
+        clamped_score = 0.01
+    else:
+        clamped_score = raw
 
     return {
         "task_id": task_id,

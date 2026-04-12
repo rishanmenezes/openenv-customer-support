@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from env.models import ActionType, EnvironmentState
 
@@ -32,6 +32,16 @@ class GradeResult(BaseModel):
         default_factory=dict,
         description="Breakdown of how the score was computed.",
     )
+
+    @field_validator("score", mode="before")
+    @classmethod
+    def _clamp_score(cls, v: float) -> float:
+        """Guarantee score is strictly in (0, 1) — never 0.0 or 1.0."""
+        if v >= 1.0:
+            return 0.99
+        if v <= 0.0:
+            return 0.01
+        return v
 
 
 # ── Public API ───────────────────────────────────────────────────────────────
@@ -55,6 +65,11 @@ def grade(state: EnvironmentState) -> GradeResult:
 
     # ── 1. Task-specific score ───────────────────────────────────────
     task_score, task_breakdown = _task_score(state)
+    # Safety: clamp task_score itself to (0, 1) exclusive
+    if task_score >= 1.0:
+        task_score = 0.99
+    elif task_score <= 0.0:
+        task_score = 0.01
     details["task_score"] = round(task_score, 4)
     details["task_breakdown"] = task_breakdown
 
@@ -118,7 +133,7 @@ def _grade_easy_refund(state: EnvironmentState) -> tuple[float, dict[str, Any]]:
 
     - Correct refund action taken            → +0.7
     - Correct refund amount ($29.99)         → +0.3
-    - No refund action at all                → 0.0
+    - No refund action at all                → 0.01
     """
     breakdown: dict[str, Any] = {}
     score = 0.0
@@ -149,6 +164,8 @@ def _grade_easy_refund(state: EnvironmentState) -> tuple[float, dict[str, Any]]:
         breakdown["refund_action"] = "+0.00 (no refund action taken)"
         breakdown["refund_amount"] = "+0.00 (n/a)"
 
+    # Safety: never return exactly 0.0 or >= 1.0
+    score = min(max(score, 0.01), 0.99)
     return score, breakdown
 
 
@@ -198,6 +215,8 @@ def _grade_medium_missing_info(state: EnvironmentState) -> tuple[float, dict[str
         breakdown["cap_applied"] = f"capped from {score:.2f} to 0.50 (no clarification)"
         score = 0.5
 
+    # Safety: never return exactly 0.0 or >= 1.0
+    score = min(max(score, 0.01), 0.99)
     return score, breakdown
 
 
@@ -208,7 +227,7 @@ def _grade_hard_fraud(state: EnvironmentState) -> tuple[float, dict[str, Any]]:
 
     - Agent escalates                        → +0.7
     - Agent does NOT issue a refund           → +0.3
-    - If refund is given → score forced to 0.0
+    - If refund is given → score forced to 0.01
     """
     breakdown: dict[str, Any] = {}
     score = 0.0
@@ -233,4 +252,6 @@ def _grade_hard_fraud(state: EnvironmentState) -> tuple[float, dict[str, Any]]:
     else:
         breakdown["escalation"] = "+0.00 (did not escalate)"
 
+    # Safety: never return exactly 0.0 or >= 1.0
+    score = min(max(score, 0.01), 0.99)
     return score, breakdown

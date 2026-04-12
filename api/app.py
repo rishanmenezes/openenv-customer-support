@@ -33,6 +33,15 @@ env = Environment(max_steps=10)
 TASK_IDS = ["easy_refund", "medium_missing_info", "hard_fraud"]
 
 
+def _safe_score(v: float) -> float:
+    """Clamp a score to strictly (0, 1) — never 0.0 or 1.0."""
+    if v >= 1.0:
+        return 0.99
+    if v <= 0.0:
+        return 0.01
+    return v
+
+
 def _reset_environment(task_id: str | None) -> Observation:
     """Shared reset logic for GET and POST /reset."""
     try:
@@ -103,9 +112,16 @@ def grader_endpoint() -> GradeResult:
     """Grade the agent's performance in the current episode."""
     result = grade(env.state())
     # FORCE clamp: validator must never see 0.00 or 1.00
-    clamped = min(max(result.score, 0.01), 0.98)
+    clamped = _safe_score(result.score)
     result.score = clamped
     result.passed = clamped >= 0.5
+    # Also clamp any score values inside details
+    if "final_score" in result.details:
+        result.details["final_score"] = _safe_score(result.details["final_score"])
+    if "task_score" in result.details:
+        result.details["task_score"] = _safe_score(result.details["task_score"])
+    if "raw_score" in result.details:
+        result.details["raw_score"] = _safe_score(result.details["raw_score"])
     return result
 
 
@@ -162,7 +178,7 @@ def baseline_endpoint() -> dict[str, Any]:
 
     # Clamp every task score at API level
     task_scores = {
-        tid: min(max(res["score"], 0.01), 0.98)
+        tid: _safe_score(res["score"])
         for tid, res in task_results.items()
     }
     scores = list(task_scores.values())

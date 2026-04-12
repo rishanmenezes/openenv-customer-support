@@ -264,7 +264,20 @@ def safe_reward(r: Any) -> float:
         return 0.98
     if r <= 0.0:
         return 0.01
+    # Extra: values that round to 0.00 or 1.00 at 2dp
+    if round(r, 2) <= 0.0:
+        return 0.01
+    if round(r, 2) >= 1.0:
+        return 0.98
     return r
+
+
+def _safe_fmt(r: float) -> str:
+    """Format a reward and verify it never prints as 0.00 or 1.00."""
+    s = f"{r:.2f}"
+    if s in ("0.00", "-0.00", "1.00", "-1.00"):
+        return "0.01" if float(s) <= 0.0 else "0.98"
+    return s
 
 
 # ── Run a single task with any agent that has a .decide() method ─────────────
@@ -322,7 +335,7 @@ def run_single_task(agent: Any, env: Any, task_id: str, max_steps: int = 10) -> 
             rewards_list.append(reward)
             step_count += 1
 
-            print(f"[STEP] step={step_count - 1} action={action_type_str} reward={reward:.2f} done={done_str} error={error_str}", flush=True)
+            print(f"[STEP] step={step_count - 1} action={action_type_str} reward={_safe_fmt(reward)} done={done_str} error={error_str}", flush=True)
 
             obs_dict = result.observation.model_dump()
 
@@ -350,7 +363,7 @@ def run_single_task(agent: Any, env: Any, task_id: str, max_steps: int = 10) -> 
             clamped_rewards = [0.01 for _ in clamped_rewards]
     # Step 3: final per-value clamp after scaling (safety net)
     clamped_rewards = [min(max(r, 0.01), 0.98) for r in clamped_rewards]
-    rewards_str = ",".join(f"{r:.2f}" for r in clamped_rewards)
+    rewards_str = ",".join(_safe_fmt(r) for r in clamped_rewards)
     print(f"[END] success={success_str} steps={step_count} rewards={rewards_str}", flush=True)
 
     return {
