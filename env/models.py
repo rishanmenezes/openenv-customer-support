@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ── Action Type Enum ─────────────────────────────────────────────────────────
@@ -86,6 +86,18 @@ class Reward(BaseModel):
         default="",
         description="Human-readable explanation of the reward.",
     )
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def _clamp_value(cls, v: float) -> float:
+        """Guarantee value never lands on 0.0 or ±1.0."""
+        if v >= 1.0:
+            return 0.99
+        if v <= -1.0:
+            return -0.99
+        if v == 0.0:
+            return 0.01
+        return v
 
 
 # ── Step result ──────────────────────────────────────────────────────────────

@@ -81,6 +81,8 @@ def grade(state: EnvironmentState) -> GradeResult:
         final_score = raw_score
 
     final_score = round(final_score, 4)
+    # Belt-and-suspenders: guarantee (0, 1) exclusive after rounding
+    final_score = min(max(final_score, 0.01), 0.99)
 
     details["raw_score"] = round(raw_score, 4)
     details["final_score"] = final_score
