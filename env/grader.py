@@ -99,7 +99,7 @@ def grade(state: EnvironmentState) -> GradeResult:
     # Belt-and-suspenders: guarantee (0, 1) exclusive after rounding
     final_score = min(max(final_score, 0.01), 0.99)
 
-    details["raw_score"] = round(raw_score, 4)
+    details["raw_score"] = min(max(round(raw_score, 4), 0.01), 0.99)
     details["final_score"] = final_score
 
     return GradeResult(
