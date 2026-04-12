@@ -255,20 +255,23 @@ class ProxyAgent:
 # ── Format-safe reward clamping ──────────────────────────────────────────────
 
 def safe_reward(r: Any) -> float:
-    """Clamp a reward so it NEVER formats as 0.00 or 1.00 via :.2f."""
+    """Clamp a reward so it NEVER formats as 0.00, 1.00, or -1.00 via :.2f."""
     try:
         r = float(r)
     except (TypeError, ValueError):
         return 0.01
-    if r >= 1.0:
-        return 0.98
-    if r <= 0.0:
-        return 0.01
-    # Extra: values that round to 0.00 or 1.00 at 2dp
-    if round(r, 2) <= 0.0:
-        return 0.01
-    if round(r, 2) >= 1.0:
-        return 0.98
+    
+    if r >= 1.0: return 0.98
+    if r <= -1.0: return -0.98
+    
+    # Avoid exactly 0.00
+    if round(r, 2) == 0.0:
+        return 0.01 if r >= 0 else -0.01
+        
+    # Prevent numbers rounding up to 1.00 or -1.00
+    if round(r, 2) >= 1.0: return 0.98
+    if round(r, 2) <= -1.0: return -0.98
+    
     return r
 
 

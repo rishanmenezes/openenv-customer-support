@@ -22,6 +22,8 @@ class GradeResult(BaseModel):
 
     score: float = Field(
         default=0.01,
+        gt=0.0,
+        lt=1.0,
         description="Normalised score in (0, 1).",
     )
     passed: bool = Field(
