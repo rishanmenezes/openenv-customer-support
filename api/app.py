@@ -27,6 +27,8 @@ app = FastAPI(
         "to resolve support tickets across easy, medium, and hard scenarios."
     ),
     version="1.0.0",
+)
+
 env = Environment(max_steps=10)
 
 TASK_IDS = ["easy_refund", "medium_missing_info", "hard_fraud"]
