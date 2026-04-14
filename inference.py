@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import time
 from typing import Any
@@ -119,7 +120,7 @@ class ProxyAgent:
                 ],
             )
             raw = response.choices[0].message.content or "{}"
-            return self._parse_action(raw)
+            return self._parse_action(raw, observation)
         except Exception as exc:
             logger.warning("Proxy call failed: %s", exc)
             return self._fallback.decide(observation)
@@ -138,11 +139,11 @@ class ProxyAgent:
         )
 
     @staticmethod
-    def _parse_action(raw: str) -> dict[str, Any]:
+    def _parse_action(raw: str, observation: dict[str, Any]) -> dict[str, Any]:
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
-            return FallbackAgent().decide({})
+            return FallbackAgent().decide(observation)
 
         action_type = data.get("action_type", "respond")
         if action_type not in {"respond", "refund", "ask_clarification", "escalate"}:
@@ -165,6 +166,9 @@ def safe_reward(value: Any) -> float:
     try:
         reward = float(value)
     except (TypeError, ValueError):
+        reward = 0.01
+
+    if not math.isfinite(reward):
         reward = 0.01
 
     reward = min(max(reward, -0.98), 0.98)

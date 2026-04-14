@@ -35,7 +35,11 @@ TASK_IDS = ["easy_refund", "medium_missing_info", "hard_fraud"]
 
 def _safe_score(v: float) -> float:
     """Clamp a score to strictly (0, 1) — never 0.0 or 1.0."""
-    return min(max(v, 0.01), 0.98)
+    try:
+        value = float(v)
+    except (TypeError, ValueError):
+        return 0.01
+    return min(max(value, 0.01), 0.98)
 
 
 def _reset_environment(task_id: str | None) -> Observation:

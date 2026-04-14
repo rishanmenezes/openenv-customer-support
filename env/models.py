@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
+import math
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
@@ -89,15 +90,23 @@ class Reward(BaseModel):
 
     @field_validator("value", mode="before")
     @classmethod
-    def _clamp_value(cls, v: float) -> float:
+    def _clamp_value(cls, v: Any) -> float:
         """Guarantee value never lands on 0.0 or ±1.0."""
-        if v >= 1.0:
-            return 0.98
-        if v <= -1.0:
-            return -0.98
-        if v == 0.0:
+        try:
+            value = float(v)
+        except (TypeError, ValueError):
             return 0.01
-        return v
+
+        if not math.isfinite(value):
+            return 0.01
+
+        if value >= 0.98 or round(value, 2) >= 1.0:
+            return 0.98
+        if value <= -0.98 or round(value, 2) <= -1.0:
+            return -0.98
+        if round(value, 2) == 0.0:
+            return 0.01 if value >= 0 else -0.01
+        return value
 
 
 # ── Step result ──────────────────────────────────────────────────────────────

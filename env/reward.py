@@ -152,7 +152,7 @@ def _reward_medium_missing_info(
         if not has_clarified:
             return +0.4, "asked for clarification — good practice (+0.40)"
         else:
-            return 0.01, "already asked for clarification (+0.00)"
+            return 0.01, "already asked for clarification (+0.01 floor)"
 
     if action_type == ActionType.RESPOND:
         if has_clarified:

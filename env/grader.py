@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import math
+from typing import Any
+
 from pydantic import BaseModel, Field, field_validator
 
 from env.models import ActionType, EnvironmentState
@@ -16,19 +19,23 @@ class GradeResult(BaseModel):
         lt=1.0,
         description="Normalised score in (0, 1).",
     )
-    passed: bool = Field(
-        default=False,
-        description="Whether the agent met the minimum success criteria (score >= 0.5).",
-    )
 
     @field_validator("score", mode="before")
     @classmethod
-    def _clamp_score(cls, v: float) -> float:
-        if v >= 1.0:
-            return 0.98
-        if v <= 0.0:
+    def _clamp_score(cls, v: Any) -> float:
+        try:
+            value = float(v)
+        except (TypeError, ValueError):
             return 0.01
-        return v
+
+        if not math.isfinite(value):
+            return 0.01
+
+        if value >= 0.98 or round(value, 2) >= 1.0:
+            return 0.98
+        if value <= 0.0 or round(value, 2) == 0.0:
+            return 0.01
+        return value
 
 
 def grade(state: EnvironmentState) -> GradeResult:
@@ -41,7 +48,7 @@ def grade(state: EnvironmentState) -> GradeResult:
     final_score = min(max(final_score, 0.01), 0.98)
     final_score = float(f"{final_score:.4f}")
 
-    return GradeResult(score=final_score, passed=final_score >= 0.5)
+    return GradeResult(score=final_score)
 
 
 def _task_score(state: EnvironmentState) -> float:

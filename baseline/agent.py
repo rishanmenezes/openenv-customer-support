@@ -253,7 +253,7 @@ def run_single_task_direct(
     return {
         "task_id": task_id,
         "score": clamped_score,
-        "passed": grade_result.passed,
+        "passed": clamped_score >= 0.5,
         "steps": len(actions_taken),
         "actions": actions_taken,
         "grade_details": {},
