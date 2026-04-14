@@ -100,12 +100,12 @@ class Reward(BaseModel):
         if not math.isfinite(value):
             return 0.01
 
-        if value >= 0.98 or round(value, 2) >= 1.0:
+        if value >= 0.99:
             return 0.98
-        if value <= -0.98 or round(value, 2) <= -1.0:
+        if value <= -0.99:
             return -0.98
-        if round(value, 2) == 0.0:
-            return 0.01 if value >= 0 else -0.01
+        if abs(value) < 0.01:
+            return 0.01
         return value
 
 
