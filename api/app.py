@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from typing import Any, Optional
@@ -11,7 +10,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from env.environment import Environment
-from env.grader import GradeResult, grade
+from env.grader import grade
 from env.models import Action, EnvironmentState, Observation, StepResult
 from env.tasks import Task, get_tasks
 
@@ -36,11 +35,7 @@ TASK_IDS = ["easy_refund", "medium_missing_info", "hard_fraud"]
 
 def _safe_score(v: float) -> float:
     """Clamp a score to strictly (0, 1) — never 0.0 or 1.0."""
-    if v >= 1.0:
-        return 0.99
-    if v <= 0.0:
-        return 0.01
-    return v
+    return min(max(v, 0.01), 0.98)
 
 
 def _reset_environment(task_id: str | None) -> Observation:
@@ -85,9 +80,8 @@ def step_env(action: Action) -> StepResult:
     """Submit an action and receive (observation, reward, done, info)."""
     try:
         result = env.step(action)
-        # Clamp reward: validator must never see ±1.0 or 0.0
         r = result.reward.value
-        r = min(max(r, -0.99), 0.99)
+        r = min(max(r, -0.98), 0.98)
         if r == 0.0:
             r = 0.01
         result.reward.value = r
@@ -108,22 +102,12 @@ def list_tasks() -> list[Task]:
     return get_tasks()
 
 
-@app.get("/grader", response_model=GradeResult, summary="Grade current episode")
-def grader_endpoint() -> GradeResult:
-    """Grade the agent's performance in the current episode."""
+@app.get("/grader", summary="Grade current episode")
+def get_grader() -> dict[str, float]:
+    """Return a minimal validator-safe score payload."""
     result = grade(env.state())
-    # FORCE clamp: validator must never see 0.00 or 1.00
-    clamped = _safe_score(result.score)
-    result.score = clamped
-    result.passed = clamped >= 0.5
-    # Also clamp any score values inside details
-    if "final_score" in result.details:
-        result.details["final_score"] = _safe_score(result.details["final_score"])
-    if "task_score" in result.details:
-        result.details["task_score"] = _safe_score(result.details["task_score"])
-    if "raw_score" in result.details:
-        result.details["raw_score"] = _safe_score(result.details["raw_score"])
-    return result
+    score = float(f"{min(max(result.score, 0.01), 0.98):.4f}")
+    return {"score": score}
 
 
 @app.get("/baseline", summary="Run baseline LLM agent on all tasks")

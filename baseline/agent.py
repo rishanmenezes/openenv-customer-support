@@ -244,11 +244,11 @@ def run_single_task_direct(
     grade_result = grade(env.state())
     raw = grade_result.score
     if raw >= 1.0:
-        clamped_score = 0.99
+        clamped_score = 0.98
     elif raw <= 0.0:
         clamped_score = 0.01
     else:
-        clamped_score = raw
+        clamped_score = min(max(raw, 0.01), 0.98)
 
     return {
         "task_id": task_id,
@@ -256,5 +256,5 @@ def run_single_task_direct(
         "passed": grade_result.passed,
         "steps": len(actions_taken),
         "actions": actions_taken,
-        "grade_details": grade_result.details,
+        "grade_details": {},
     }

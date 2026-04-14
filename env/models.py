@@ -92,9 +92,9 @@ class Reward(BaseModel):
     def _clamp_value(cls, v: float) -> float:
         """Guarantee value never lands on 0.0 or ±1.0."""
         if v >= 1.0:
-            return 0.99
+            return 0.98
         if v <= -1.0:
-            return -0.99
+            return -0.98
         if v == 0.0:
             return 0.01
         return v

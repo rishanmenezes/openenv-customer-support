@@ -4,12 +4,12 @@ Computes a per-step reward based on:
   1. Task-specific action correctness
   2. General shaping penalties (step cost, repeats, invalid actions)
 
-All rewards are deterministic and clamped to [-1.0, +1.0].
+All rewards are deterministic and clamped to [-0.98, +0.98].
 """
 
 from __future__ import annotations
 
-from env.models import ActionType, Observation, Reward
+from env.models import ActionType, Reward
 
 
 def compute_reward(
@@ -31,7 +31,7 @@ def compute_reward(
         action_history: All *previous* actions taken this episode (before this step).
 
     Returns:
-        Reward with value clamped to [-1.0, +1.0] and an explanation string.
+        Reward with value clamped to [-0.98, +0.98] and an explanation string.
     """
     value: float = 0.0
     reasons: list[str] = []
@@ -69,7 +69,7 @@ def compute_reward(
 
     # ── 3. Clamp to [-1.0, +1.0] ────────────────────────────────────────
 
-    value = max(-0.99, min(0.99, round(value, 4)))
+    value = max(-0.98, min(0.98, round(value, 4)))
 
     return Reward(value=value, reason=" | ".join(reasons))
 
@@ -106,7 +106,7 @@ def _reward_easy_refund(
 ) -> tuple[float, str]:
     """Easy task: agent should acknowledge then refund the correct amount.
 
-    - refund with correct amount  → +1.0
+    - refund with correct amount  → +0.98
     - refund with wrong amount    → +0.3  (partial credit)
     - respond (acknowledgement)   → +0.1
     - ask_clarification           → -0.1  (unnecessary — info already provided)
@@ -114,7 +114,7 @@ def _reward_easy_refund(
     """
     if action_type == ActionType.REFUND:
         if refund_amount is not None and abs(refund_amount - order_amount) < 0.01:
-            return +0.99, f"correct refund ${refund_amount:.2f} (+0.99)"
+            return +0.98, f"correct refund ${refund_amount:.2f} (+0.98)"
         else:
             return +0.3, f"refund issued but wrong amount ${refund_amount or 0:.2f} vs expected ${order_amount:.2f} (+0.30)"
 
@@ -179,13 +179,13 @@ def _reward_hard_fraud(
 ) -> tuple[float, str]:
     """Hard task: agent should NOT refund a flagged account; should escalate.
 
-    - escalate           → +1.0  (correct — send to fraud team)
+    - escalate           → +0.98  (correct — send to fraud team)
     - ask_clarification  → +0.2  (reasonable due diligence)
     - respond            → +0.0  (neutral — doesn't help or harm)
-    - refund             → -1.0  (catastrophic — gave money to fraudster)
+    - refund             → -0.98  (catastrophic — gave money to fraudster)
     """
     if action_type == ActionType.ESCALATE:
-        return +0.99, "escalated to fraud team — correct (+0.99)"
+        return +0.98, "escalated to fraud team — correct (+0.98)"
 
     if action_type == ActionType.ASK_CLARIFICATION:
         return +0.2, "asked for verification — reasonable due diligence (+0.20)"
@@ -194,6 +194,6 @@ def _reward_hard_fraud(
         return 0.01, "generic response — neutral (+0.01)"
 
     if action_type == ActionType.REFUND:
-        return -0.99, "refunded a flagged/fraudulent account — critical error (-0.99)"
+        return -0.98, "refunded a flagged/fraudulent account — critical error (-0.98)"
 
     return 0.01, "no task-specific reward"

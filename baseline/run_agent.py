@@ -89,22 +89,25 @@ def run_task_http(
     r = client.get("/grader")
     r.raise_for_status()
     grade_result = r.json()
+    score = min(max(grade_result.get("score", 0.01), 0.01), 0.98)
+    passed = grade_result.get("passed", score >= 0.5)
+    details = grade_result.get("details", {})
 
     logger.info(
         "  Score: %.2f | Passed: %s | Steps: %d",
-        grade_result["score"],
-        grade_result["passed"],
+        score,
+        passed,
         len(actions_taken),
     )
 
     return {
         "task_id": task_id,
-        "score": grade_result["score"],
-        "passed": grade_result["passed"],
+        "score": score,
+        "passed": passed,
         "steps": len(actions_taken),
         "actions": actions_taken,
         "cumulative_reward": round(sum(step_rewards), 4),
-        "grade_details": grade_result["details"],
+        "grade_details": details,
     }
 
 
